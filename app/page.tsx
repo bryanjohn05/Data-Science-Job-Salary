@@ -15,6 +15,7 @@ import { PredictionForm } from "@/components/prediction-form"
 import { loadAndProcessData, type ProcessedData } from "@/lib/data-processing"
 import { getOrTrainModel, type MLModel } from "@/lib/ml-model"
 import { getModelInfo, clearSavedModel, loadModelFromStorage } from "@/lib/model-storage"
+import Link from "next/link"
 
 export default function Dashboard() {
   const [data, setData] = useState<ProcessedData | null>(null)
@@ -212,6 +213,10 @@ export default function Dashboard() {
               <div className="mt-4 text-sm text-muted-foreground">
                 Dataset: {stats.totalJobs} jobs • Charts: {data.experienceStats.length} experience levels •{" "}
                 {data.yearlyStats.length} years
+              </div>
+              
+              <div className="hover:text-blue-600">
+                  <Link href="https://github.com/bryanjohn05/Data-Analyst-Jobs/blob/main/public/dataset.csv">View Dataset</Link>
               </div>
             </div>
             <div className="text-right">
