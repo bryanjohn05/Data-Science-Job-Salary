@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import * as tf from "@tensorflow/tfjs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, TrendingUp, Calendar, Users, MapPin, Briefcase, Filter } from "lucide-react"
+import { Loader2, TrendingUp, Calendar, Users, MapPin, Briefcase } from "lucide-react"
 import type { MLModel } from "@/lib/ml-model"
 import type { ProcessedData } from "@/lib/data-processing"
 
@@ -25,24 +26,14 @@ export function PredictionForm({ model, data }: PredictionFormProps) {
   const [remoteRatio, setRemoteRatio] = useState([50])
   const [prediction, setPrediction] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
-  const [filteredData, setFilteredData] = useState(data.rawData)
 
-  // Filter data based on selections
   const filteredStats = useMemo(() => {
     let filtered = data.rawData
 
-    if (jobTitle) {
-      filtered = filtered.filter((job) => job.job_title === jobTitle)
-    }
-    if (experienceLevel) {
-      filtered = filtered.filter((job) => job.experience_level === experienceLevel)
-    }
-    if (employmentType) {
-      filtered = filtered.filter((job) => job.employment_type === employmentType)
-    }
-    if (companySize) {
-      filtered = filtered.filter((job) => job.company_size === companySize)
-    }
+    if (jobTitle) filtered = filtered.filter((job) => job.job_title === jobTitle)
+    if (experienceLevel) filtered = filtered.filter((job) => job.experience_level === experienceLevel)
+    if (employmentType) filtered = filtered.filter((job) => job.employment_type === employmentType)
+    if (companySize) filtered = filtered.filter((job) => job.company_size === companySize)
 
     const avgSalary =
       filtered.length > 0 ? filtered.reduce((sum, job) => sum + job.salary_in_usd, 0) / filtered.length : 0
@@ -87,17 +78,23 @@ export function PredictionForm({ model, data }: PredictionFormProps) {
       const employmentTypes = ["FT", "PT", "CT", "FL"]
       const companySizes = ["S", "M", "L"]
 
-      const features = [
-        workYear - 2020, // Normalized year
+      const featuresArray = [
+        workYear - 2020,
         experienceLevels.indexOf(experienceLevel),
         employmentTypes.indexOf(employmentType),
         companySizes.indexOf(companySize),
-        remoteRatio[0] / 100, // Normalized remote ratio
-        data.topJobTitles.indexOf(jobTitle), // Job title encoding
+        remoteRatio[0] / 100,
+        data.topJobTitles.indexOf(jobTitle),
       ]
 
-      const predictedSalary = await model.predict(features)
-      setPrediction(Math.round(predictedSalary))
+      const inputTensor = tf.tensor2d([featuresArray])
+      const normalizedInput = inputTensor.sub(model.scaler.featureMean).div(model.scaler.featureStd)
+
+      const output = model.model.predict(normalizedInput) as tf.Tensor
+      const predictionTensor = await output.data()
+      const denormalizedPrediction = predictionTensor[0] * model.scaler.targetStd + model.scaler.targetMean
+
+      setPrediction(Math.round(denormalizedPrediction))
     } catch (error) {
       console.error("Prediction error:", error)
       alert("Error making prediction. Please try again.")
@@ -106,11 +103,11 @@ export function PredictionForm({ model, data }: PredictionFormProps) {
     }
   }
 
-  const getConfidenceRange = (basePrediction: number) => {
-    const variance = basePrediction * 0.15 // 15% variance
+  const getConfidenceRange = (base: number) => {
+    const delta = base * 0.15
     return {
-      low: Math.round(basePrediction - variance),
-      high: Math.round(basePrediction + variance),
+      low: Math.round(base - delta),
+      high: Math.round(base + delta),
     }
   }
 
@@ -218,12 +215,7 @@ export function PredictionForm({ model, data }: PredictionFormProps) {
                   min={2020}
                   max={2030}
                   step={1}
-                  className="w-full"
                 />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>2020</span>
-                  <span>2030</span>
-                </div>
               </div>
 
               <div className="space-y-2">
@@ -237,13 +229,7 @@ export function PredictionForm({ model, data }: PredictionFormProps) {
                   min={0}
                   max={100}
                   step={25}
-                  className="w-full"
                 />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>On-site</span>
-                  <span>Hybrid</span>
-                  <span>Remote</span>
-                </div>
               </div>
             </div>
 
@@ -267,104 +253,59 @@ export function PredictionForm({ model, data }: PredictionFormProps) {
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-         
-          {/* <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Market Data
-              </CardTitle>
-              <CardDescription>Based on your current filters</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <div className="text-lg font-semibold text-blue-700">{filteredStats.count}</div>
-                  <div className="text-xs text-blue-600">Jobs Found</div>
+        {/* Results */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Prediction Results</CardTitle>
+            <CardDescription>ML-powered salary prediction</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {prediction !== null ? (
+              <div className="space-y-4 text-center">
+                <div className="text-3xl font-bold text-primary">${prediction.toLocaleString()}</div>
+                <p className="text-sm text-muted-foreground">Predicted Annual Salary (USD)</p>
+
+                <div className="text-sm">
+                  Confidence Range:{" "}
+                  <span className="font-medium">
+                    ${getConfidenceRange(prediction).low.toLocaleString()} - $
+                    {getConfidenceRange(prediction).high.toLocaleString()}
+                  </span>
                 </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <div className="text-lg font-semibold text-green-700">
-                    ${filteredStats.avgSalary.toLocaleString()}
+
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <div className="text-lg font-semibold text-green-700">
+                      ${Math.round(prediction / 12).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-green-600">Monthly</div>
                   </div>
-                  <div className="text-xs text-green-600">Avg Salary</div>
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <div className="text-lg font-semibold text-blue-700">
+                      ${Math.round(prediction / 2080).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-blue-600">Hourly</div>
+                  </div>
                 </div>
+
+                {filteredStats.avgSalary > 0 && (
+                  <div className="mt-4 text-sm">
+                    vs Market Avg:{" "}
+                    <Badge variant={prediction > filteredStats.avgSalary ? "default" : "secondary"}>
+                      {prediction > filteredStats.avgSalary ? "+" : ""}
+                      {(((prediction - filteredStats.avgSalary) / filteredStats.avgSalary) * 100).toFixed(1)}%
+                    </Badge>
+                  </div>
+                )}
               </div>
-
-              {filteredStats.count > 0 && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Salary Range:</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    ${filteredStats.minSalary.toLocaleString()} - ${filteredStats.maxSalary.toLocaleString()}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card> */}
-
-          {/* Prediction Results Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Prediction Results</CardTitle>
-              <CardDescription>ML-powered salary prediction</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {prediction !== null ? (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-primary mb-2">${prediction.toLocaleString()}</div>
-                    <div className="text-sm text-muted-foreground">Predicted Annual Salary (USD)</div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <span className="font-medium">Confidence Range</span>
-                      <span className="text-sm">
-                        ${getConfidenceRange(prediction).low.toLocaleString()} - $
-                        {getConfidenceRange(prediction).high.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="text-center p-3 bg-green-50 rounded-lg">
-                        <div className="text-lg font-semibold text-green-700">
-                          ${Math.round(prediction / 12).toLocaleString()}
-                        </div>
-                        <div className="text-xs text-green-600">Monthly</div>
-                      </div>
-                      <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <div className="text-lg font-semibold text-blue-700">
-                          ${Math.round(prediction / 2080).toLocaleString()}
-                        </div>
-                        <div className="text-xs text-blue-600">Hourly</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {filteredStats.avgSalary > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">vs Market Average</Label>
-                      <div className="flex justify-between items-center text-sm">
-                        <span>Filtered Market Data</span>
-                        <Badge variant={prediction > filteredStats.avgSalary ? "default" : "secondary"}>
-                          {prediction > filteredStats.avgSalary ? "+" : ""}
-                          {(((prediction - filteredStats.avgSalary) / filteredStats.avgSalary) * 100).toFixed(1)}%
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Configure job parameters and click "Predict Salary" to see results</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Configure job parameters and click "Predict Salary" to see results</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -24,12 +24,9 @@ const MODEL_VERSION = "1.0.0"
 export async function saveModelToStorage(model: tf.Sequential, scaler: any, data: ProcessedData): Promise<void> {
   try {
     console.log("Saving model to browser storage...")
-
-    // Save model to IndexedDB
     const modelUrl = "indexeddb://salary-prediction-model"
     await model.save(modelUrl)
 
-    // Save scaler and metadata to localStorage
     const modelData: SavedModelData = {
       modelUrl,
       scaler: {
@@ -62,8 +59,6 @@ export async function loadModelFromStorage(): Promise<{
 } | null> {
   try {
     console.log("Attempting to load model from browser storage...")
-
-    // Check if model data exists in localStorage
     const modelDataStr = localStorage.getItem(MODEL_STORAGE_KEY)
     if (!modelDataStr) {
       console.log("No saved model found in localStorage")
@@ -72,20 +67,17 @@ export async function loadModelFromStorage(): Promise<{
 
     const modelData: SavedModelData = JSON.parse(modelDataStr)
 
-    // Check model version
     if (modelData.metadata.version !== MODEL_VERSION) {
       console.log("Model version mismatch, will retrain")
       return null
     }
 
-    // Load model from IndexedDB
     const model = (await tf.loadLayersModel(modelData.modelUrl)) as tf.Sequential
     if (!model) {
       console.log("Failed to load model from IndexedDB")
       return null
     }
 
-    // Reconstruct scaler tensors
     const scaler = {
       featureMean: tf.tensor1d(modelData.scaler.featureMean),
       featureStd: tf.tensor1d(modelData.scaler.featureStd),
@@ -101,8 +93,41 @@ export async function loadModelFromStorage(): Promise<{
     }
   } catch (error) {
     console.error("Error loading model from storage:", error)
-    // Clear corrupted data
     localStorage.removeItem(MODEL_STORAGE_KEY)
+    return null
+  }
+}
+
+export async function loadModelFromPublic(): Promise<{
+  model: tf.LayersModel
+  scaler: any
+  metadata: SavedModelData["metadata"]
+} | null> {
+  try {
+    const model = await tf.loadLayersModel("/model/salary_prediction_model.json")
+
+    const scalerRes = await fetch("/model/scaler.json")
+    const scalerData = await scalerRes.json()
+
+    const scaler = {
+      featureMean: tf.tensor1d(scalerData.featureMean),
+      featureStd: tf.tensor1d(scalerData.featureStd),
+      targetMean: scalerData.targetMean,
+      targetStd: scalerData.targetStd,
+    }
+
+    const metadata: SavedModelData["metadata"] = {
+      version: MODEL_VERSION,
+      trainedAt: scalerData.trainedAt || new Date().toISOString(),
+      dataSize: scalerData.dataSize || 0,
+      features: scalerData.features || [],
+      topJobTitles: scalerData.topJobTitles || [],
+    }
+
+    console.log("Model loaded from public model files")
+    return { model, scaler, metadata }
+  } catch (error) {
+    console.error("Error loading model from public folder:", error)
     return null
   }
 }
@@ -110,7 +135,6 @@ export async function loadModelFromStorage(): Promise<{
 export function clearSavedModel(): void {
   try {
     localStorage.removeItem(MODEL_STORAGE_KEY)
-    // Note: IndexedDB cleanup would require more complex logic
     console.log("Saved model data cleared")
   } catch (error) {
     console.error("Error clearing saved model:", error)
