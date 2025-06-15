@@ -73,7 +73,7 @@ const salary = output * targetStd + targetMean
 
 ---
 
-## 📤 Export / Download Model
+## 📤 Export / Download Model (currently commented out)
 
 You can download:
 - `salary_prediction_model.json`
@@ -81,15 +81,15 @@ You can download:
 - `scaler.json`
 
 To do this:
-1. Click **"Download Trained Model"** on the dashboard. (currently commented out)
+1. Click **"Download Trained Model"** on the dashboard. 
 2. Files will be downloaded to your browser.
 3. Copy them into `/public/model/` for reuse.
 
 ---
 
-## 🔄 Retraining
+## 🔄 Retraining (currently commented out)
 
-Use **"Retrain Model"** to:  (currently commented out)
+Use **"Retrain Model"** to:  
 - Re-train the ML model using in-browser TensorFlow.js
 - Overwrite cached model in IndexedDB
 - Save updated model locally
